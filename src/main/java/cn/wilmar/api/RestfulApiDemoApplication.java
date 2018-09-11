@@ -3,8 +3,6 @@ package cn.wilmar.api;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.annotations.*;
 import lombok.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -25,8 +23,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.client.RestTemplate;
+import springfox.documentation.builders.ApiInfoBuilder;
 import springfox.documentation.builders.RequestHandlerSelectors;
+import springfox.documentation.service.ApiInfo;
+import springfox.documentation.service.Contact;
 import springfox.documentation.spi.DocumentationType;
 import springfox.documentation.spring.web.plugins.Docket;
 import springfox.documentation.swagger2.annotations.EnableSwagger2;
@@ -34,6 +34,10 @@ import springfox.documentation.swagger2.annotations.EnableSwagger2;
 import javax.persistence.*;
 import javax.validation.Valid;
 import javax.validation.constraints.NotNull;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.LocalDateTime;
@@ -43,41 +47,57 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
+/**
+ * 主程序入口
+ */
 @EnableSwagger2
 @EnableJpaAuditing // 开启 JPA 审计功能
 @SpringBootApplication
 public class RestfulApiDemoApplication {
+    private static final String SWAGGER_SCAN_BASE_PACKAGE = "cn.wilmar";
+    private static final String VERSION = "1.0.0";
 
     public static void main(String[] args) {
         SpringApplication.run(RestfulApiDemoApplication.class, args);
     }
 
+    /**
+     * Swagger 配置
+     */
     @Bean
     public Docket restApiDocket() {
         return new Docket(DocumentationType.SWAGGER_2)
                 .select()
-                .apis(RequestHandlerSelectors.basePackage("cn.wilmar"))
+                .apis(RequestHandlerSelectors.basePackage(SWAGGER_SCAN_BASE_PACKAGE)) // 指定 package
+                .build()
+                .apiInfo(apiInfo());
+    }
+
+    private ApiInfo apiInfo() {
+        return new ApiInfoBuilder()
+                .title("Restful API Demo 接口文档")//设置文档的标题
+                .description("更多内容请关注：http://www.wilmar.cn")//设置文档的描述->1.Overview
+                .version(VERSION)//设置文档的版本信息-> 1.1 Version information
+                .contact(new Contact("Yin Guo Wei", "http://www.wilmar.cn", "yinguowei@cn.wilmar-intl.com"))//设置文档的联系方式->1.2 Contact information
+                .termsOfServiceUrl("http://www.wilmar.cn")//设置文档的License信息->1.3 License information
+                .license("Apache 2.0")
+                .licenseUrl("http://www.apache.org/licenses/LICENSE-2.0")
                 .build();
     }
 
-    @Bean
-    RestTemplate restTemplate() {
-        return new RestTemplate();
-    }
 }
 
 /**
- * User 实体对象，映射数据库 user 表，对应资源 users
+ * User 实体对象，映射数据库 user 表，对应资源 /api/users
  */
 @Data
 @NoArgsConstructor
-@AllArgsConstructor
 @RequiredArgsConstructor
 @ApiModel(description = "数据库用户对象")
 @EntityListeners(AuditingEntityListener.class)
 @Entity
 class User {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) @ApiModelProperty(value = "ID", example = "1")
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) @ApiModelProperty(value = "用户 ID", example = "1")
     Long id;
     @NonNull @NotNull @ApiModelProperty(value = "用户姓名", example = "Yin Guo Wei")
     String name;
@@ -88,7 +108,7 @@ class User {
     @NonNull @ApiModelProperty(value = "邮箱", example = "yinguowei@cn.wilmar-intl.com")
     String email;
 
-    @ManyToMany(fetch = FetchType.EAGER)
+    @ManyToMany(fetch = FetchType.EAGER) @ApiModelProperty(value = "用户的角色", dataType = "Role")
     Set<Role> roles = new HashSet<>();
 
     @CreatedDate @JsonIgnore
@@ -105,11 +125,14 @@ class User {
     String lastModifiedBy; // 审计字段：最后修改人
 }
 
+/**
+ * Role 实体对象
+ */
 @Data
 @ApiModel(description = "数据库角色对象")
 @Entity
 class Role {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) @ApiModelProperty(value = "ID", example = "1")
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) @ApiModelProperty(value = "角色 ID", example = "1")
     Long id;
     @NonNull @NotNull @ApiModelProperty(value = "角色名称", example = "Administrator")
     String name;
@@ -117,8 +140,18 @@ class Role {
     RoleCode code;
 }
 
+/**
+ * 角色代码枚举类型
+ */
 enum RoleCode {
-    ADMIN, USER
+    /**
+     * 管理员
+     */
+    ADMIN,
+    /**
+     * 普通用户
+     */
+    USER
 }
 
 /**
@@ -135,12 +168,11 @@ class DefaultAuditorAware implements AuditorAware<String> {
 /**
  * User 对象资源管理对象（DTO）
  */
-//@RepositoryRestResource
-interface UserRestRepository extends JpaRepository<User, Long> {
+interface UserRepository extends JpaRepository<User, Long> {
     /**
      * 根据登录账号查询用户
      *
-     * @return
+     * @return User Optional 对象
      */
     Optional<User> getUserByLogin(String login);
 
@@ -157,8 +189,10 @@ interface UserRestRepository extends JpaRepository<User, Long> {
 //    Page<User> findByKeyword(Pageable pageable, String keyword);
 }
 
+/**
+ * Role 对象资源管理对象（DTO）
+ */
 interface RoleRepository extends CrudRepository<Role, Long> {
-
 }
 
 /**
@@ -167,13 +201,16 @@ interface RoleRepository extends CrudRepository<Role, Long> {
 @Component
 class InitDataLoader implements CommandLineRunner {
 
+    /**
+     * 角色：Admin、User
+     */
     private final Role defaultRole = new Role("Default User", RoleCode.USER);
     private final Role adminRole = new Role("Administrator", RoleCode.ADMIN);
 
-    private final UserRestRepository userRepository;
+    private final UserRepository userRepository;
     private final RoleRepository roleRepository;
 
-    InitDataLoader(UserRestRepository userRepository, RoleRepository roleRepository) {
+    InitDataLoader(UserRepository userRepository, RoleRepository roleRepository) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
     }
@@ -183,6 +220,9 @@ class InitDataLoader implements CommandLineRunner {
         roleRepository.save(defaultRole);
         roleRepository.save(adminRole);
 
+        /**
+         * 测试用户
+         */
         Stream.of("Yin Guo Wei", "Liang Jian", "Wan Jon Yew", "Kwek So Cheer").forEach(
                 name -> userRepository.save(new User(
                         name,
@@ -191,6 +231,9 @@ class InitDataLoader implements CommandLineRunner {
                         name.replaceAll(" ", "").toLowerCase() + "@cn.wilmar-intl.com"
                 ))
         );
+        /**
+         * 给用户添加默认角色：Default User
+         */
         List<User> users = userRepository.findAll();
         for (User user : users) {
             user.getRoles().add(defaultRole);
@@ -204,28 +247,36 @@ class InitDataLoader implements CommandLineRunner {
 
 }
 
-/*
-@Target({ ElementType.METHOD, ElementType.ANNOTATION_TYPE, ElementType.TYPE })
+/**
+ * 集合了 Spring Pageable 参数的 Swagger 注解
+ */
+@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE, ElementType.TYPE})
 @Retention(RetentionPolicy.RUNTIME)
 @ApiImplicitParams({
-        @ApiImplicitParam(name = "page", dataType = "int", paramType = "query", value = "Results page you want to retrieve (0..N)"),
-        @ApiImplicitParam(name = "size", dataType = "int", paramType = "query", value = "Number of records per page."),
-        @ApiImplicitParam(name = "sort", allowMultiple = true, dataType = "string", paramType = "query", value = "Sorting criteria in the format: property(,asc|desc). "
-                + "Default sort order is ascending. " + "Multiple sort criteria are supported.") })
+        @ApiImplicitParam(name = "page", dataType = "integer", paramType = "query",
+                value = "第几页 (0..N)"),
+        @ApiImplicitParam(name = "size", dataType = "integer", paramType = "query",
+                value = "每页的记录数"),
+        @ApiImplicitParam(name = "sort", allowMultiple = true, dataType = "string", paramType = "query",
+                value = "排序，书写格式：property(,asc|desc). 默认 asc. 支持多个排序.")})
 @interface ApiPageable {
 }
-*/
 
+/**
+ * User 控制器，管理所有路径
+ */
 @Api(value = "/api", description = "用户相关操作 API")
 @RestController
 @RequestMapping("/api")
 class UserController {
 
     private static final String APPLICATION_NAME = "RestfulApiDemo";
-    private final UserRestRepository repository;
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
 
-    UserController(UserRestRepository repository) {
-        this.repository = repository;
+    UserController(UserRepository userRepository, RoleRepository roleRepository) {
+        this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
     }
 
 //    @ApiOperation(value = "查询所有用户")
@@ -236,25 +287,17 @@ class UserController {
 
     @ApiOperation(value = "根据用户名查询用户")
     @ApiResponses(@ApiResponse(code = 200, message = "查询信息成功"))
-    @ApiImplicitParams({
-            @ApiImplicitParam(name = "page", dataType = "integer", paramType = "query",
-                    value = "第几页 (0..N)"),
-            @ApiImplicitParam(name = "size", dataType = "integer", paramType = "query",
-                    value = "每页的记录数"),
-            @ApiImplicitParam(name = "sort", allowMultiple = true, dataType = "string", paramType = "query",
-                    value = "排序，书写格式：property(,asc|desc). " +
-                            "默认 asc. " +
-                            "支持多个排序.")
-    })
     @GetMapping("/users")
+    @ApiPageable
 //    public ResponseEntity<List<User>> queryUsers(@RequestParam("limit") int limit, @RequestParam("offset") int offset, @RequestParam("sortby") String sortby, @RequestParam("order") String order) {
 //        userRepository.findAll()
 //    }
     public ResponseEntity<List<User>> queryUsers(
             @PageableDefault Pageable page,
-            @ApiParam(value = "查询关键字", allowableValues = "range[1,5]")
+            @ApiParam(value = "查询关键字", allowableValues = "range[1,5]", defaultValue = "Yin")
             @RequestParam(value = "keyword", defaultValue = "") String keyword) throws URISyntaxException {
-        Page<User> users = repository.findByLoginLikeOrNameLikeOrEmailLike(page, "%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%");
+        Page<User> users = userRepository.findByLoginLikeOrNameLikeOrEmailLike(page, "%" + keyword + "%", "%" + keyword + "%", "%" + keyword + "%");
+//        userRepository.findAll();
         return new ResponseEntity<>(users.getContent(), HttpStatus.OK);
 //        return ResponseEntity.created(new URI("/api/users")).header("").body(users.getContent());
     }
@@ -267,12 +310,12 @@ class UserController {
     })
     @GetMapping("/users/{id}")
     public ResponseEntity<User> get(
-            @ApiParam(name = "id", value = "用户id", required = true)
+            @ApiParam(name = "id", value = "用户id", required = true, defaultValue = "1")
             @PathVariable Long id) {
         if (id == null) {
             return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
         }
-        return repository.findById(id)
+        return userRepository.findById(id)
                 .map(user1 -> new ResponseEntity<>(user1, HttpStatus.OK))
                 .orElseGet(() -> new ResponseEntity<>(HttpStatus.NOT_FOUND));
     }
@@ -286,17 +329,17 @@ class UserController {
     public ResponseEntity<User> save(
             @ApiParam(name = "user", value = "用户对象", required = true)
             @Valid @RequestBody User user) throws URISyntaxException {
-        Optional<User> userOpt = repository.getUserByLogin(user.getLogin());
+        Optional<User> userOpt = userRepository.getUserByLogin(user.getLogin());
         if (userOpt.isPresent()) {
 //            return new ResponseEntity<>(HttpStatus.CONFLICT);
             return ResponseEntity.noContent()
                     .header("X-" + APPLICATION_NAME + "-error", "用户账号已经存在冲突")
                     .build();
         } else {
-//            return new ResponseEntity<>(repository.save(user), HttpStatus.CREATED);
+//            return new ResponseEntity<>(userRepository.save(user), HttpStatus.CREATED);
             return ResponseEntity.created(new URI("/api/users"))
                     .header("X-" + APPLICATION_NAME + "-alert", "资源创建成功") // TODO: mess code
-                    .body(repository.save(user));
+                    .body(userRepository.save(user));
         }
     }
 
@@ -307,11 +350,11 @@ class UserController {
     })
     @PatchMapping("/users/{id}")
     public ResponseEntity<User> patchUser(
-            @ApiParam(name = "id", value = "用户id", required = true)
+            @ApiParam(name = "id", value = "用户id", required = true, defaultValue = "1")
             @PathVariable Long id,
             @ApiParam(name = "user", value = "用户对象", required = true)
             @RequestBody User user) {
-        Optional<User> userOpt = repository.findById(id);
+        Optional<User> userOpt = userRepository.findById(id);
         if (!userOpt.isPresent()) {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
@@ -327,7 +370,7 @@ class UserController {
             userOrig.setPassword(user.getPassword());
         }
         // TODO: modified judge
-        return new ResponseEntity<>(repository.save(userOrig), HttpStatus.OK);
+        return new ResponseEntity<>(userRepository.save(userOrig), HttpStatus.OK);
     }
 
     @ApiOperation(value = "更新用户", notes = "保存编辑后的用户")
@@ -337,11 +380,11 @@ class UserController {
     })
     @PutMapping("/users/{id}")
     public ResponseEntity<User> update(
-            @ApiParam(name = "id", value = "用户id", required = true)
+            @ApiParam(name = "id", value = "用户id", required = true, defaultValue = "1")
             @PathVariable Long id,
             @ApiParam(name = "user", value = "用户对象", required = true)
             @Valid @RequestBody User user) {
-        Optional<User> userOpt = repository.findById(id);
+        Optional<User> userOpt = userRepository.findById(id);
         if (!userOpt.isPresent()) {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
@@ -349,7 +392,7 @@ class UserController {
 //        new AssertTrue(userOpt.get().getLogin().equals(user.getLogin()), "Error login");
         // TODO: mapper
         // TODO: modified judge
-        return new ResponseEntity<>(repository.save(
+        return new ResponseEntity<>(userRepository.save(
                 userOpt.map(userOrig -> {
                     userOrig.setEmail(user.getEmail());
                     userOrig.setName(user.getName());
@@ -368,44 +411,93 @@ class UserController {
     })
     @DeleteMapping("/users/{id}")
     public ResponseEntity<Void> delete(
-            @ApiParam(name = "id", value = "用户id", required = true)
+            @ApiParam(name = "id", value = "用户id", required = true, defaultValue = "4")
             @PathVariable Long id) {
-        Optional<User> userOpt = repository.findById(id);
+        Optional<User> userOpt = userRepository.findById(id);
         if (!userOpt.isPresent()) {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
-        repository.deleteById(id);
+        userRepository.deleteById(id);
         return new ResponseEntity<>(HttpStatus.NO_CONTENT);
     }
 
 
-//    @PostMapping("/users/{userId}/role/{roleId}")
-//    public ResponseEntity<User> addRole(@PathVariable("userId") String userId, @PathVariable("roleId") String roleId) {
-//
-//    }
+    @ApiOperation(value = "给指定用户新增角色")
+    @PostMapping("/users/{userId}/roles/{roleId}")
+    @ApiResponses({
+            @ApiResponse(code = 201, message = "用户角色创建成功"),
+            @ApiResponse(code = 404, message = "没有找到用户id或角色id")
+    })
+    public ResponseEntity<User> addRole(
+            @ApiParam(name = "userId", value = "用户id", required = true, defaultValue = "2")
+            @PathVariable("userId") final Long userId,
+            @ApiParam(name = "roleId", value = "角色id", required = true, defaultValue = "2")
+            @PathVariable("roleId") final Long roleId) {
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (!userOpt.isPresent()) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+        Optional<Role> roleOpt = roleRepository.findById(roleId);
+        if (!roleOpt.isPresent()) {
+//            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+            ResponseEntity.notFound().header("...").build();
+        }
+        userOpt.get().getRoles().forEach(role -> {
+            if (role.getId().equals(roleId)) {
+                // TODO:
+            }
+        });
+        userOpt.get().getRoles().add(roleOpt.get());
+        userRepository.save(userOpt.get());
+        return new ResponseEntity<>(userOpt.get(), HttpStatus.CREATED);
+    }
+
+    @ApiOperation(value = "删除指定用户的指定角色")
+    @DeleteMapping("/users/{userId}/roles/{roleId}")
+    @ApiResponses({
+            @ApiResponse(code = 204, message = "删除成功，没有返回内容"),
+            @ApiResponse(code = 404, message = "没有找到用户id或角色id")
+    })
+    public ResponseEntity<Void> deleteRole(
+            @ApiParam(name = "userId", value = "用户id", required = true, defaultValue = "1")
+            @PathVariable("userId") final Long userId,
+            @ApiParam(name = "roleId", value = "角色id", required = true, defaultValue = "2")
+            @PathVariable("roleId") final Long roleId) {
+        Optional<User> userOpt = userRepository.findById(userId);
+        if (!userOpt.isPresent()) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+        Optional<Role> roleOpt = roleRepository.findById(roleId);
+        if (!roleOpt.isPresent()) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+//            ResponseEntity.notFound().header("...").build();
+        }
+        // TODO: exists
+        userOpt.get().getRoles().remove(roleOpt.get());
+        userRepository.save(userOpt.get());
+        return new ResponseEntity<>(HttpStatus.NO_CONTENT);
+    }
 
 }
 
+/**
+ * Role 控制器
+ */
+@Api(value = "/api", description = "角色相关操作的 API")
 @RestController
-@RequestMapping("/test")
-class UserClient {
+@RequestMapping("/api")
+class RoleController {
 
-    Logger logger = LoggerFactory.getLogger(UserClient.class);
+    private final RoleRepository repository;
 
-
-    private final RestTemplate restTemplate;
-
-    UserClient(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
+    RoleController(RoleRepository repository) {
+        this.repository = repository;
     }
 
-    @RequestMapping("/users")
-    public List<User> testUsers() {
-        ResponseEntity<List> responseEntity = restTemplate.getForEntity("http://localhost:8080/api/users", List.class);
-        logger.debug(responseEntity.getStatusCode().toString());
-        responseEntity.getHeaders().forEach((s, strings) -> logger.debug("key: " + s + ", value: " + strings));
-        logger.debug(responseEntity.getBody().toString());
-        return responseEntity.getBody();
+    @ApiOperation(value = "查询所有角色")
+    @ApiResponse(code = 200, message = "返回成功")
+    @GetMapping("/roles")
+    public ResponseEntity<Iterable<Role>> getAllRoles() {
+        return new ResponseEntity<>(repository.findAll(), HttpStatus.OK);
     }
-
 }
