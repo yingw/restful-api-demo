@@ -160,6 +160,22 @@
                         <version>${swagger2markup.version}</version>
                     </dependency>
 -->
+<!--
+                    &lt;!&ndash;离线文档&ndash;&gt;
+                    <dependency>
+                        <groupId>org.springframework.restdocs</groupId>
+                        <artifactId>spring-restdocs-mockmvc</artifactId>
+                        <version>1.1.2.RELEASE</version>
+                        <scope>test</scope>
+                    </dependency>
+                    &lt;!&ndash;springfox-staticdocs 生成静态文档&ndash;&gt;
+                    <dependency>
+                        <groupId>io.springfox</groupId>
+                        <artifactId>springfox-staticdocs</artifactId>
+                        <version>2.6.1</version>
+                    </dependency>
+-->
+
                 </dependencies>
 
                 <configuration>

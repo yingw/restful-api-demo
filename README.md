@@ -44,7 +44,8 @@ curl -X POST http://localhost:8080/api/users -d "{\"login\": \"test\", \"name\":
 Or just run
 
 ```bash
-./mvnw test
+./mvnw spring-boot:run
+./mvnw test (need 8080 running)
 ```
 
 Then find your document (HTML/PDF) in **target/asciidoc** folder. (TODO: Chinese font in PDF needs to be fixed.)

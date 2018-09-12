@@ -315,6 +315,8 @@ class UserController {
             return new ResponseEntity<>(headers, HttpStatus.CONFLICT);
         } else {
 //            return new ResponseEntity<>(userRepository.save(user), HttpStatus.CREATED);
+            user.setId(null);
+            user.setRoles(null);
             return ResponseEntity.created(new URI("/api/users"))
                     .header("X-" + APPLICATION_NAME + "-alert", "资源创建成功") // TODO: mess code
                     .body(userRepository.save(user));
